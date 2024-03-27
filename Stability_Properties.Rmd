@@ -1,0 +1,266 @@
+---
+title: "Untitled"
+output: html_document
+date: "2024-02-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(expm)
+library(readr)
+source("Distances.R")
+library(gridExtra)
+library(patchwork)
+library(pROC)
+```
+
+
+```{r}
+n=800
+f=300
+df1 = matrix(NA,nrow=n,ncol=f)
+df2 = matrix(NA,nrow=n,ncol=f)
+
+# t=1
+connection_prob = matrix(c(0.08,0.02,0.18,0.02,0.02,0.2,0.04,0.02,0.18,0.04,0.02,(10/300),0.02,0.02,(10/300),0.06)*3,nrow=4,ncol=4)
+
+connections = matrix(NA,nrow=f,ncol=f)
+for (i in 1:f){
+  for (j in 1:f){
+    connections[i,j] = rbinom(1,1,connection_prob[((i-1)%/%(f/4))+1,((j-1)%/%(f/4))+1])
+  }
+}
+#for (i in 1:f) connections[i,i]=0
+
+ 
+for (x in 1:n){
+  df1[x,] = rnorm(f,sd=0.05)
+  copy = df1[x,]
+  for (i in 1:f){
+    for (j in 1:f){
+      if (connections[i,j]) df1[x,i] = df1[x,i]+copy[j]
+    }
+    #df1[x,i] = df1[x,i] + rnorm(1,sd=0.001)
+  }
+}
+
+
+# t=2
+connection_prob = matrix(c(0.16,0.16,0.04,0.02,0.16,0.16,0.04,0.02,0.04,0.04,0.1,(10/300),0.02,0.02,(10/300),0.06)*3,nrow=4,ncol=4)
+
+connections = matrix(NA,nrow=f,ncol=f)
+for (i in 1:f){
+  for (j in 1:f){
+    connections[i,j] = rbinom(1,1,connection_prob[((i-1)%/%(f/4))+1,((j-1)%/%(f/4))+1])
+  }
+}
+#for (i in 1:f) connections[i,i]=0
+
+ 
+for (x in 1:n){
+  df2[x,] = rnorm(f,sd=0.05) #0.05
+  copy = df2[x,]
+  for (i in 1:f){
+    for (j in 1:f){
+      if (connections[i,j]) df2[x,i] = df2[x,i]+copy[j]
+    }
+    #df1[x,i] = df1[x,i] + rnorm(1,sd=0.001)
+  }
+}
+
+```
+
+```{r}
+# Using covariance matrices
+df1_c = matrix(NA,nrow=n,ncol=f)
+df2_c = matrix(NA,nrow=n,ncol=f)
+for (i in 1:f) {
+  df1_c[,i] = df1[,i] - mean(df1[,i])
+  df2_c[,i] = df2[,i] - mean(df2[,i])
+}
+hol_1 = cov(df1_c)
+hol_2 = cov(df2_c)
+for (i in 1:f) hol_1[i,i] = hol_2[i,i] = 0
+
+
+A = cbind(hol_1,hol_2)
+```
+
+```{r}
+# Using Hellinger distance instead of covariance
+H1 = matrix(NA,nrow=f,ncol=f)
+for (j in 1:f){
+  for (i in j:f){
+    H1[i,j]= H1[j,i]= UnivariateHD_Empirical(df1[,i],df1[,j]) 
+
+  }
+}
+H2 = matrix(NA,nrow=f,ncol=f)
+for (j in 1:f){
+  for (i in j:f){
+    H2[i,j]= H2[j,i]= UnivariateHD_Empirical(df2[,i],df2[,j]) 
+
+  }
+}
+for (i in 1:f) H1[i,i] = H2[i,i] = 0
+B=cbind(H1,H2)
+```
+
+```{r}
+d=6
+V = svd(A,nu=d,nv=d)$v
+D = sqrtm(diag(svd(A,nu=d,nv=d)$d)[1:d,1:d])
+vals = V%*%D 
+```
+
+```{r}
+x = c(-0.7,0)
+y = c(-0.5,0.35)
+
+# Your first plot data preparation and plot creation
+s1 = as.data.frame(vals[1:f,1:2])
+s1$Community = as.factor(c(rep(1,f/4),rep(2,f/4),rep(3,f/4),rep(4,f/4)))
+
+p1 = ggplot(s1, aes(x=V1, y=V2)) + 
+  geom_point(aes(colour = Community), size=0.9) + 
+  xlim(x) + ylim(y) + labs(colour = "") + xlab(NULL) + ylab(NULL) + ggtitle(expression(hat(bold(Y))^(1)))+
+  scale_colour_brewer(palette = "Set1", labels = c("Community 1", "Community 2", "Community 3", "Community 4")) + theme(plot.title = element_text(hjust = 0.5)) +
+  theme(legend.position="none")  # Disable the legend for individual plots
+
+# Your second plot data preparation and plot creation
+s2 = as.data.frame(vals[(f+1):(2*f),1:2])
+s2$Community = as.factor(c(rep(1,f/4),rep(2,f/4),rep(3,f/4),rep(4,f/4)))
+
+p2 = ggplot(s2, aes(x=V1, y=V2)) + 
+  geom_point(aes(colour = Community), size=0.9) + 
+  xlim(x) + ylim(y) + labs(colour = "") + xlab(NULL) + ylab(NULL) + ggtitle(expression(hat(bold(Y))^(2)))+
+  scale_colour_brewer(palette = "Set1", labels = c("Community 1", "Community 2", "Community 3", "Community 4")) + theme(plot.title = element_text(hjust = 0.5)) +
+  theme(legend.position="none")  # Disable the legend for individual plots
+
+# Combine plots with patchwork, putting the legend underneath
+combined_plot1 = p1 + p2 + plot_layout(guides = 'collect') & theme(legend.position="bottom")
+
+# Print the combined plot
+print(combined_plot1)
+
+```
+```{r}
+# Now compare to embedding independent plots
+V1 = svd(hol_1,nu=d,nv=d)$v
+D1 = sqrtm(diag(svd(hol_1,nu=d,nv=d)$d)[1:d,1:d])
+vals1 = V1%*%D1
+
+V2 = svd(hol_2,nu=d,nv=d)$v
+D2 = sqrtm(diag(svd(hol_2,nu=d,nv=d)$d)[1:d,1:d])
+vals2 = V2%*%D2 
+```
+```{r}
+x = c(-0.63,0)
+y = c(-0.3,0.5)
+
+# Your first plot data preparation and plot creation
+s1 = as.data.frame(vals1[,1:2])
+s1$Community = as.factor(c(rep(1,f/4),rep(2,f/4),rep(3,f/4),rep(4,f/4)))
+
+p1 = ggplot(s1, aes(x=V1, y=V2)) + 
+  geom_point(aes(colour = Community), size=0.9) + 
+  xlim(x) + ylim(y) + labs(colour = "") + xlab(NULL) + ylab(NULL) + ggtitle(expression(hat(bold(Y))^(1)))+
+  scale_colour_brewer(palette = "Set1", labels = c("Community 1", "Community 2", "Community 3", "Community 4")) + theme(plot.title = element_text(hjust = 0.5)) +
+  theme(legend.position="none")  # Disable the legend for individual plots
+
+# Your second plot data preparation and plot creation
+s2 = as.data.frame(vals2[,1:2])
+s2$Community = as.factor(c(rep(1,f/4),rep(2,f/4),rep(3,f/4),rep(4,f/4)))
+
+p2 = ggplot(s2, aes(x=V1, y=V2)) + 
+  geom_point(aes(colour = Community), size=0.9) + 
+  xlim(x) + ylim(y) + labs(colour = "") + xlab(NULL) + ylab(NULL) + ggtitle(expression(hat(bold(Y))^(2)))+
+  scale_colour_brewer(palette = "Set1", labels = c("Community 1", "Community 2", "Community 3", "Community 4")) + theme(plot.title = element_text(hjust = 0.5)) +
+  theme(legend.position="none")  # Disable the legend for individual plots
+
+# Combine plots with patchwork, putting the legend underneath
+combined_plot2 = p1 + p2 + plot_layout(guides = 'collect') & theme(legend.position="bottom")
+
+# Print the combined plot
+print(combined_plot2)
+```
+
+```{r}
+# Compute singular values for Helinger matrix
+V = svd(B,nu=d,nv=d)$v
+D = sqrtm(diag(svd(B,nu=d,nv=d)$d)[1:d,1:d])
+H_vals = V%*%D 
+x = c(-0.7,-0.1)
+y = c(-0.5,0.5)
+```
+
+
+```{r}
+# Compare ROC curves
+t1 = vals[1,1:2]
+t2 = vals[(f+1), 1:2]
+dist = sqrt((t2[1]-t1[1])^2 + (t2[2]-t1[2])^2)
+
+
+travelled = data.frame(pos=1,d=dist)
+
+for (i in 2:f){
+  t1 = vals[i,1:2]
+  t2 = vals[(f+i), 1:2]
+  dist = sqrt((t2[1]-t1[1])^2 + (t2[2]-t1[2])^2)
+  
+  travelled[nrow(travelled) + 1,] = c(i,dist)
+}
+
+travelled = travelled[order(travelled$d), ]
+
+travelled$moved = rep.int(0,f)
+
+for (i in 1:f){
+  if (travelled$pos[i] <= 3*f/4){
+    travelled$moved[i] = 1
+  }
+}
+
+C_moved = travelled$moved
+C_dist = travelled$d
+
+# Hellinger
+t1 = H_vals[1,1:2]
+t2 = H_vals[(f+1), 1:2]
+dist = sqrt((t2[1]-t1[1])^2 + (t2[2]-t1[2])^2)
+
+
+travelled = data.frame(pos=1,d=dist)
+
+for (i in 2:f){
+  t1 = H_vals[i,1:2]
+  t2 = H_vals[(f+i), 1:2]
+  dist = sqrt((t2[1]-t1[1])^2 + (t2[2]-t1[2])^2)
+  
+  travelled[nrow(travelled) + 1,] = c(i,dist)
+}
+
+travelled = travelled[order(travelled$d), ]
+
+travelled$moved = rep.int(0,f)
+
+for (i in 1:200){
+  if (travelled$pos[i] <= (0.75*f)){
+    travelled$moved[i] = 1
+  }
+}
+
+H_moved = travelled$moved
+H_dist = travelled$d
+
+
+par(pty="s")
+
+
+roc(C_moved,C_dist,plot=TRUE,legacy.axes=TRUE,xlab="False Positive", ylab= "True Positive",print.auc=TRUE)
+plot.roc(H_moved,H_dist,col='red',print.auc=TRUE,add=TRUE,print.auc.y=0.45)
+```
+
+
+

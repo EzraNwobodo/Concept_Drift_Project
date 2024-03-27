@@ -1,0 +1,155 @@
+---
+title: "WORLDDATA"
+output: pdf_document
+date: "2024-03-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(ggrepel)
+library(expm)
+library(readr)
+library(plotly)
+source("Distances.R")
+```
+
+```{r}
+# Data cleaning
+data <- read_csv("World_Data.csv")
+df = data
+#df = df[,!names(df) %in% c("Iran, Islamic Rep. [IRN]")]
+df[df == '..'] <- NA
+df[df == '0'] <- NA
+data = df
+delete.na.row <- function(DF, n=0) {
+  DF[rowSums(is.na(DF)) <= n,]
+}
+delete.na.col <- function(DF, n=0) {
+  DF[,colSums(is.na(DF)) <= n]
+}
+hollow <- function(m){
+  for (i in 1:nrow(m)) m[i,i] = 0
+  return(m)
+}
+
+```
+
+```{r}
+df2 = data
+df2 = data[data$Time == 2018,]
+df3 = data[data$Time == 2019,]
+df4 = data[data$Time == 2020,]
+df5 = data[data$Time == 2021,]
+df6 = data[data$Time == 2022,]
+
+# Delete NA values
+dfs = list(df2,df3,df4,df5)
+n = length(dfs)
+
+for (i in 1:n){
+  df = dfs[[i]]
+  df = delete.na.row(df,35)
+  df = delete.na.col(df)
+  dfs[[i]] = as.data.frame(df)
+}
+names = names(dfs[[1]])
+for (i in 2:n) names = intersect(names,names(dfs[[i]]))
+
+for (i in 1:n){
+  dfs[[i]] = dfs[[i]][names]
+}
+# Delete non numeric columns
+for (i in 1:n){
+  df = dfs[[i]]
+  df = df[,5:length(df)]
+  df = as.data.frame(sapply(df, as.numeric))
+  dfs[[i]] = df
+}
+
+```
+
+```{r}
+# Using Hellinger distance
+f=length(dfs[[1]])
+H = list()
+for (k in 1:n){
+  H1 = matrix(NA,nrow=f,ncol=f)
+  df = dfs[[k]]
+  for (j in 1:f){
+    for (i in j:f){
+      H1[i,j]= H1[j,i]= UnivariateHD_Empirical(df[,i],df[,j]) 
+      
+    }
+  }
+  H = append(H,list(H1))
+}
+
+A = hollow(H[[1]])
+for (k in 2:n) A = cbind(A,hollow(H[[k]]))
+```
+
+
+```{r}
+d=10
+V = svd(A,nu=d,nv=d)$v
+D = sqrtm(diag(svd(A,nu=d,nv=d)$d)[1:d,1:d])
+vals = V%*%D 
+
+vals = as.data.frame(vals[,1:3])
+k = nrow(A)
+
+```
+```{r}
+x= c(-0.75,-0.5)
+y= c(-0.4,0.42)
+for (i in 1:n){
+  vals_ti = vals[((i-1)*k+1):(i*k),]
+  vals_ti$name = names(dfs[[i]])
+  
+  fig = plot_ly(x=vals_ti$V1, y=vals_ti$V2, type="scatter", mode="markers", color=vals_ti$V3,text = ~paste("Country: ", vals_ti$name))%>%
+    layout(xaxis=list(title='x',zeroline=F),
+           yaxis=list(title='y',zeroline=F))
+  show(fig)
+}
+
+```
+```{r}
+# Using covariance (clearly worse)
+f=length(dfs[[1]])
+H = list()
+for (k in 1:n){
+  df = dfs[[k]]
+  H = append(H,list(cov(df)))
+}
+
+A = hollow(H[[1]])
+for (k in 2:n) A = cbind(A,hollow(H[[k]]))
+```
+
+```{r}
+d=10
+V = svd(A,nu=d,nv=d)$v
+D = sqrtm(diag(svd(A,nu=d,nv=d)$d)[1:d,1:d])
+vals = V%*%D 
+
+vals = as.data.frame(vals[,1:3])
+k = nrow(A)
+
+```
+```{r}
+x= c(-0.75,-0.5)
+y= c(-0.4,0.42)
+for (i in 1:n){
+  vals_ti = vals[((i-1)*k+1):(i*k),]
+  vals_ti$name = names(dfs[[i]])
+  
+  fig = plot_ly(x=vals_ti$V1, y=vals_ti$V2, type="scatter", mode="markers", color=vals_ti$V3,text = ~paste("Country: ", vals_ti$name))%>%
+    layout(xaxis=list(title='x',zeroline=F),
+           yaxis=list(title='y',zeroline=F))
+  show(fig)
+}
+
+```
+
+
